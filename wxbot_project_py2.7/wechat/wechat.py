@@ -57,17 +57,19 @@ class WeChat(WXAPI):
 
     def start(self):
         echo(Constant.LOG_MSG_START)
-        run(Constant.LOG_MSG_RECOVER, self.recover)
+        run(Constant.LOG_MSG_RECOVER, self.recover) #从conf文件里面恢复配置信息。
 
         timeOut = time.time() - self.last_login
         echo(Constant.LOG_MSG_TRY_INIT)
+        #先根据配置文件里面的参数信息pass_ticket, self.skey 这2个参数尝试初始化。如果干活成功，那么就从pickle文件里面恢复联系人信息。
         if self.webwxinit():
             echo(Constant.LOG_MSG_SUCCESS)
-            run(Constant.LOG_MSG_RECOVER_CONTACT, self.recover_contacts)
+            run(Constant.LOG_MSG_RECOVER_CONTACT, self.recover_contacts) #从pickle文件里面恢复联系人信息。
         else:
             echo(Constant.LOG_MSG_FAIL)
 
             while True:
+                # 初始化失败后，先尝试从uin 进行登录。这步不需要扫描二维码。
                 # first try to login by uin without qrcode
                 echo(Constant.LOG_MSG_ASSOCIATION_LOGIN)
                 if self.association_login():
@@ -75,19 +77,24 @@ class WeChat(WXAPI):
                 else:
                     echo(Constant.LOG_MSG_FAIL)
                     # scan qrcode to login
-                    run(Constant.LOG_MSG_GET_UUID, self.getuuid)
+                    run(Constant.LOG_MSG_GET_UUID, self.getuuid) # 先获取uuid
                     echo(Constant.LOG_MSG_GET_QRCODE)
-                    self.genqrcode()
+                    self.genqrcode()  #根据uuid获取登录二维码。这步还分成window和非windows两个平台
                     echo(Constant.LOG_MSG_SCAN_QRCODE)
-
-                if not self.waitforlogin():
+                
+                #等待手机确认登录。如果没有确认，那么重新再生成二维码。目前这里二维码生成速度比较快，可以等待一下。不知道二维码的有效期多久。
+                #这个扫描二维码的接口和手机端确认的接口在server端都有超时等待，http请求本身就会在server端被等待手机端的确认，有一个超时的时间
+                #所以在代码里面就不需要在自己增加一个超时的时间了。这个也是之前没有想明白的地方。
+                if not self.waitforlogin():  
                     continue
                 echo(Constant.LOG_MSG_CONFIRM_LOGIN)
-                if not self.waitforlogin(0):
+                if not self.waitforlogin(0): #用户手机端确认以后，server端会返回一个redirect_uri
                     continue
                 break
-
+            
+            #根据上面获取的redirect_uri 进行一次登录操作。获取登录以后的用户令牌信息。其中包括skey、wxsid、wxuin、pass_ticket
             run(Constant.LOG_MSG_LOGIN, self.login)
+            # init可以获取机主个个人信息。
             run(Constant.LOG_MSG_INIT, self.webwxinit)
             run(Constant.LOG_MSG_STATUS_NOTIFY, self.webwxstatusnotify)
             run(Constant.LOG_MSG_GET_CONTACT, self.webwxgetcontact)
@@ -98,7 +105,7 @@ class WeChat(WXAPI):
                     len(self.GroupList), len(self.ContactList),
                     len(self.SpecialUsersList), len(self.PublicUsersList)
                 ))
-            run(Constant.LOG_MSG_GET_GROUP_MEMBER, self.fetch_group_contacts)
+            run(Constant.LOG_MSG_GET_GROUP_MEMBER, self.fetch_group_contacts) #把群联系人存到数据库里面。
 
         run(Constant.LOG_MSG_SNAPSHOT, self.snapshot)
 
@@ -236,8 +243,8 @@ class WeChat(WXAPI):
                         # 否则请注释下列代码在主线程里更新群列表
                         # -----------------------------------
                         # 处理群成员
-                        # if self.wechat.msg_handler:
-                        #     self.wechat.msg_handler.handle_group_member_list(gid, member_list['MemberList'])
+                        if self.wechat.msg_handler:
+                            self.wechat.msg_handler.handle_group_member_list(gid, member_list['MemberList'])
                         # -----------------------------------
 
                     self.group_list_queue.task_done()
@@ -627,7 +634,7 @@ class WeChat(WXAPI):
 
         raw_msg['timestamp'] = msg['raw_msg']['CreateTime']
         t = time.localtime(float(raw_msg['timestamp']))
-        raw_msg['time'] = time.strftime("%Y-%m-%d %T", t)
+        raw_msg['time'] = time.strftime("%Y-%m-%d %H:%M:%S", t)
 
         for key in [
             'text', 'link', 'image', 'video', 'voice',

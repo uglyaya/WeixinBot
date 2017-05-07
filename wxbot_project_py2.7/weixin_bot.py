@@ -22,8 +22,8 @@ import time
 
 
 cm = ConfigManager()
-db = SqliteDB(cm.getpath('database'))
-# db = MysqlDB(cm.mysql())
+# db = SqliteDB(cm.getpath('database'))
+db = MysqlDB(cm.mysql())
 wechat_msg_processor = WeChatMsgProcessor(db)
 wechat = WeChat(cm.get('wechat', 'host'))
 wechat.db = db

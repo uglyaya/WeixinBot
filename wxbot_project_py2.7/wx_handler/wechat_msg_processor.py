@@ -182,6 +182,7 @@ class WeChatMsgProcessor(object):
             if name in [self.wechat.User['NickName'], self.wechat.User['RemarkName']]:
                 self.handle_command(trans_coding(text)[n+1:].encode('utf-8'), msg)
 
+    #处理普通用户消息
     def handle_user_msg(self, msg):
         """
         @brief      Recieve personal messages
@@ -189,12 +190,17 @@ class WeChatMsgProcessor(object):
         """
         wechat = self.wechat
 
-        text = trans_coding(msg['text']).encode('utf-8')
-        uid = msg['raw_msg']['FromUserName']
-
+        text = trans_coding(msg['text']).encode('utf-8') #消息的内容
+        uid = msg['raw_msg']['FromUserName'] #发送方
+        print text
         if text == 'test_revoke': # 撤回消息测试
             dic = wechat.webwxsendmsg('这条消息将被撤回', uid)
+            wechat.revoke_msg(dic['MsgID'], uid, dic['LocalID'])  #机主发出消息。并且马上撤回
+        if text == 'zzz' :
+            dic = wechat.webwxsendmsg('123123', uid) 
+            wechat.webwxsendemoticon()
             wechat.revoke_msg(dic['MsgID'], uid, dic['LocalID'])
+            
 
 
     def handle_command(self, cmd, msg):

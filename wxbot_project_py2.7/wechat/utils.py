@@ -45,6 +45,7 @@ def _decode_data(data):
         return data
 
 
+#如果是非windows平台。那么直接在console端直接用ascii码打出二维码
 def str2qr_terminal(text):
     """
     @brief      convert string to qrcode matrix and outprint

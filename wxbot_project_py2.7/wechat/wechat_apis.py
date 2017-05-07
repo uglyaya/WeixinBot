@@ -16,6 +16,7 @@ import xml.dom.minidom
 # for media upload
 import mimetypes
 from requests_toolbelt.multipart.encoder import MultipartEncoder
+from celery.tests.case import todo
 #===================================================
 
 
@@ -202,7 +203,7 @@ class WXAPI(object):
             data = post(url, params, False)
             if data == '':
                 return
-            qrcode_path = save_file('qrcode.jpg', data, './')
+            qrcode_path = save_file('qrcode.jpg', data, os.path.abspath('.'))
             os.startfile(qrcode_path)
         else:
             str2qr_terminal(self.wx_conf['API_qrcode'] + self.uuid)
@@ -272,11 +273,13 @@ class WXAPI(object):
 
         return True
 
+    @todo
     def webwxinit(self):
         """
         @brief      wechat initial
                     掉线后 300 秒可以重新使用此 api 登录
-                    获取的联系人和群ID保持不变
+                    获取的联系人和群ID保持不变。
+                    todo本接口目前是获取了机主的个人信息在User对象里面。但是接口里面还返回了最近联系人信息ChatSet（id） 和对应的的详细资料ContactList 
         @return     Bool: whether operation succeed
         """
         url = self.wx_conf['API_webwxinit'] + \
@@ -326,6 +329,8 @@ class WXAPI(object):
 
         self.MemberCount = dic['MemberCount']
         self.MemberList = dic['MemberList']
+        for bean in self.MemberList:
+            print bean['UserName']+"|"+str(bean['VerifyFlag'])
         ContactList = self.MemberList[:]
         GroupList = self.GroupList[:]
         PublicUsersList = self.PublicUsersList[:]
