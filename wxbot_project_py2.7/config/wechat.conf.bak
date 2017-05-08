@@ -8,6 +8,7 @@ skey =
 pass_ticket = 
 device_id = 
 last_login = 
+synckey = 
 
 [setting]
 prefix = tmp_data/

@@ -39,7 +39,7 @@ class WeChatMsgProcessor(object):
         self.db.create_table(Constant.TABLE_GROUP_USER_LIST(), Constant.TABLE_GROUP_USER_LIST_COL)
         self.db.create_table(Constant.TABLE_RECORD_ENTER_GROUP, Constant.TABLE_RECORD_ENTER_GROUP_COL)
         self.db.create_table(Constant.TABLE_RECORD_RENAME_GROUP, Constant.TABLE_RECORD_RENAME_GROUP_COL)
-
+        
     def handle_wxsync(self, msg):
         """
         @brief      Recieve webwxsync message, saved into json

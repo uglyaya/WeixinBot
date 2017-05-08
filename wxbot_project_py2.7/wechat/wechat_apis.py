@@ -16,7 +16,6 @@ import xml.dom.minidom
 # for media upload
 import mimetypes
 from requests_toolbelt.multipart.encoder import MultipartEncoder
-from celery.tests.case import todo
 #===================================================
 
 
@@ -272,8 +271,7 @@ class WXAPI(object):
         }
 
         return True
-
-    @todo
+ 
     def webwxinit(self):
         """
         @brief      wechat initial
@@ -315,6 +313,7 @@ class WXAPI(object):
 
         return dic['BaseResponse']['Ret'] == 0
 
+    ##获取联系人，这里是可以获取全部的联系人、全部的公众号信息、特殊联系人。但是没去看来无法获取群聊的相关信息。
     def webwxgetcontact(self):
         """
         @brief      get all contacts: people, group, public user, special user
@@ -329,8 +328,8 @@ class WXAPI(object):
 
         self.MemberCount = dic['MemberCount']
         self.MemberList = dic['MemberList']
-        for bean in self.MemberList:
-            print bean['UserName']+"|"+str(bean['VerifyFlag'])
+#         for bean in self.MemberList:
+#             print bean['UserName']+"|"+str(bean['VerifyFlag'])
         ContactList = self.MemberList[:]
         GroupList = self.GroupList[:]
         PublicUsersList = self.PublicUsersList[:]
@@ -948,7 +947,7 @@ class WXAPI(object):
             'DisplayName': '',
             'ShowName': '',
             'OwnerUin': '',
-            'MemberCount': '',
+            'MemberCount': '0',
         }
 
         for member in self.GroupList:

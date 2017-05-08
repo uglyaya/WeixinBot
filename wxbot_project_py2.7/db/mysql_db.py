@@ -52,7 +52,8 @@ class MysqlDB(object):
         # cache table cols
         self.table_cols = {}
         for t in self.show_tables():
-            self.table_cols[t] = self.get_table_column_name(t)
+            self.table_cols[t.lower()] = self.get_table_column_name(t)
+ 
 
     def show_database(self):
         c = self.conn.cursor()
@@ -79,6 +80,7 @@ class MysqlDB(object):
             self.execute(sql)
 
     def create_table(self, table, cols):
+        table = table.lower()
         """
         @brief      Creates a table in database
         @param      table  String
@@ -91,6 +93,7 @@ class MysqlDB(object):
             self.table_cols[table] = ['id'] + [c.strip().split(' ')[0] for c in cols.split(',')]
 
     def delete_table(self, table):
+        table = table.lower()
         """
         @brief      Delete a table in database
         @param      table  String
@@ -102,6 +105,7 @@ class MysqlDB(object):
             self.table_cols.pop(table)
 
     def insert(self, table, value):
+        table = table.lower()
         """
         @brief      Insert a row in table
         @param      table  String
@@ -113,6 +117,7 @@ class MysqlDB(object):
         self.execute(sql)
 
     def insertmany(self, table, values):
+        table = table.lower()
         """
         @brief      Insert many rows in table
         @param      table  String
@@ -124,6 +129,7 @@ class MysqlDB(object):
         self.execute(sql, values)
 
     def select(self, table, field='', condition=''):
+        table = table.lower()
         """
         @brief      select all result from table
         @param      table  String
@@ -138,6 +144,7 @@ class MysqlDB(object):
         return self.execute(sql)
 
     def get_table_column_name(self, table):
+        table = table.lower()
         """
         @brief      select all result from table
         @param      table  String
@@ -179,6 +186,7 @@ class MysqlDB(object):
             return result
 
     def delete(self, table, field='', condition=''):
+        table = table.lower()
         """
         @brief      execute sql commands, return result if it has
         @param      table  String

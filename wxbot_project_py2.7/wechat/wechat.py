@@ -94,9 +94,11 @@ class WeChat(WXAPI):
             
             #根据上面获取的redirect_uri 进行一次登录操作。获取登录以后的用户令牌信息。其中包括skey、wxsid、wxuin、pass_ticket
             run(Constant.LOG_MSG_LOGIN, self.login)
-            # init可以获取机主个个人信息。
+            # init可以获取机主个个人信息。这里面还可以获取最近的聊天联系人的记录。ChatSet和ContactList
             run(Constant.LOG_MSG_INIT, self.webwxinit)
+            #通知手机，网页版已经登录成功
             run(Constant.LOG_MSG_STATUS_NOTIFY, self.webwxstatusnotify)
+            #获取联系人，这里是可以获取全部的联系人、全部的公众号信息、特殊用户。但是这里无法获取群聊信息。
             run(Constant.LOG_MSG_GET_CONTACT, self.webwxgetcontact)
             echo(Constant.LOG_MSG_CONTACT_COUNT % (
                     self.MemberCount, len(self.MemberList)
@@ -105,9 +107,11 @@ class WeChat(WXAPI):
                     len(self.GroupList), len(self.ContactList),
                     len(self.SpecialUsersList), len(self.PublicUsersList)
                 ))
+            #目前看这里获取不到群联系放人
             run(Constant.LOG_MSG_GET_GROUP_MEMBER, self.fetch_group_contacts) #把群联系人存到数据库里面。
-
+        #把获取到的登录信息和联系人信息都暂存一下。
         run(Constant.LOG_MSG_SNAPSHOT, self.snapshot)
+#--------------------------以上是登录和初始化操作
 
         while True:
             [retcode, selector] = self.synccheck()
@@ -209,7 +213,7 @@ class WeChat(WXAPI):
         # 197       4                 50               20
         # ----------------------------------------------------
 
-        max_thread_num = 4
+        max_thread_num = 1 #4
         max_fetch_group_num = 50
         group_list_queue = Queue.Queue()
 
@@ -230,6 +234,7 @@ class WeChat(WXAPI):
                         gid_list.append(gid)
                         g_dict[gid] = g
 
+                    # 通过 webwxbatchgetcontact 这个接口获取群相关信息
                     group_member_list = self.wechat.webwxbatchgetcontact(gid_list)
 
                     for member_list in group_member_list:
@@ -237,6 +242,9 @@ class WeChat(WXAPI):
                         g = g_dict[gid]
                         g['MemberCount'] = member_list['MemberCount']
                         g['OwnerUin'] = member_list['OwnerUin']
+                        g['HeadImgUrl'] = member_list['HeadImgUrl']
+                        g['NickName'] = member_list['NickName'] #群名称，如果为空 那么表示未定名
+                        g['IsOwner'] = member_list['IsOwner']   #=1 自己是群主 ， =0不是
                         self.wechat.GroupMemeberList[gid] = member_list['MemberList']
 
                         # 如果使用 Mysql 则可以在多线程里操作数据库
@@ -246,31 +254,31 @@ class WeChat(WXAPI):
                         if self.wechat.msg_handler:
                             self.wechat.msg_handler.handle_group_member_list(gid, member_list['MemberList'])
                         # -----------------------------------
-
+                    run(Constant.LOG_MSG_SNAPSHOT, self.wechat.snapshot)
                     self.group_list_queue.task_done()
 
+        #把groupList按照 max_fetch_group_num 为长度截取。因为后面的可以分段的通过webwxbatchgetcontact 这个接口来获取群聊的详细信息
         for g_list in split_array(self.GroupList, max_fetch_group_num):
             group_list_queue.put(g_list)
 
+        #启动 max_thread_num 个线程去获取
         for i in range(max_thread_num):
             t = GroupListThread(group_list_queue, self)
             t.setDaemon(True)
             t.start()
 
         group_list_queue.join()
-
+        #等待所有的线程返回然后交给第三方handler处理。
         if self.msg_handler:
             # 处理群
             if self.GroupList:
                 self.msg_handler.handle_group_list(self.GroupList)
-
             # 这个是用 sqlite 来存储群列表，sqlite 对多线程的支持不太好
             # ----------------------------------------------------
             # 处理群成员
             for (gid, member_list) in self.GroupMemeberList.items():
                 self.msg_handler.handle_group_member_list(gid, member_list)
             # ----------------------------------------------------
-
         return True
 
     def snapshot(self):
@@ -405,19 +413,20 @@ class WeChat(WXAPI):
         @brief      Recover from snapshot data.
         @param      r  Dict: message json
         """
+        #先调用注册进来的处理消息的handler。这个可以作为第三方处理函数的接口。
         Log.debug('handle message')
         if self.msg_handler:
             self.msg_handler.handle_wxsync(r)
 
+        #以下是wechat 对象本身的处理逻辑
         n = len(r['AddMsgList'])
         if n == 0:
             return
 
         if self.log_mode:
             echo(Constant.LOG_MSG_NEW_MSG % n)
-
+        print r['AddMsgList']
         for msg in r['AddMsgList']:
-
             msgType = msg['MsgType']
             msgId = msg['MsgId']
             content = msg['Content'].replace('&lt;', '<').replace('&gt;', '>')
@@ -518,8 +527,24 @@ class WeChat(WXAPI):
                         'raw_msg': msg,
                         'log': Constant.LOG_MSG_UNKNOWN_MSG % (msgType, content)
                     }
-            elif msgType == self.wx_conf['MSGTYPE_STATUSNOTIFY']:
+            #这里在第一次登录后会第一次触发一次群聊的信息的拉取。AddMsgList-》StatusNotifyUserName 会把所有的最近的群聊信息都拉回。
+            elif msgType == self.wx_conf['MSGTYPE_STATUSNOTIFY']: #MsgType=51
                 Log.info(Constant.LOG_MSG_NOTIFY_PHONE)
+                statusNotifyUserName = msg['StatusNotifyUserName'] 
+                userlist = statusNotifyUserName.split(',')
+                needflush = False
+                if len(userlist) > 0: 
+                    for username in userlist:
+                        if username.find('@@') != -1: 
+                            user ={}
+                            user['UserName']=username
+                            group = self.get_group_by_id(username)
+                            if group and int(group['MemberCount']) == 0:
+                                self.GroupList.append(user)
+                                needflush =True
+                    if needflush:
+                        run(Constant.LOG_MSG_GET_GROUP_MEMBER, self.fetch_group_contacts) #把群联系人存到数据库里面。
+    
             elif msgType == self.wx_conf['MSGTYPE_MICROVIDEO']:
                 data = self.webwxgetvideo(msgId)
                 fn = 'video_' + msgId + '.mp4'
@@ -681,7 +706,7 @@ class WeChat(WXAPI):
                 u_id = msg['raw_msg']['FromUserName']
                 group = self.get_group_by_id(g_id)
                 src = self.get_group_user_by_id(u_id, g_id)
-                dst = {'ShowName': 'GROUP'}
+                dst = {'ShowName': group['ShowName']}
             else:
                 # 非群聊消息
                 src = self.get_user_by_id(msg['raw_msg']['FromUserName'])
