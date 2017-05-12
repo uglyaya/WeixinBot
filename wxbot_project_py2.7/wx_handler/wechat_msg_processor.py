@@ -115,7 +115,7 @@ class WeChatMsgProcessor(object):
 
         if msg['msg_type'] == 10000:
             # record member enter in group
-            m = re.search(r'邀请(.+)加入了群聊', msg['sys_notif'])
+            m = re.search(r'邀请(.+)加入了群聊', msg['Content'])
             if m:
                 name = m.group(1)
                 col_enter_group = (
