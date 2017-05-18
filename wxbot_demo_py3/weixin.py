@@ -22,12 +22,14 @@ from collections import defaultdict
 from urllib.parse import urlparse
 from lxml import html
 from socket import timeout as timeout_error
-import hashlib
+import hashlib,shutil
+from urllib.request import urlopen, urlretrieve 
 #import pdb
 
 # for media upload
 import mimetypes
 from requests_toolbelt.multipart.encoder import MultipartEncoder
+from baseHandler import BaseHandler
 
 def catchKeyboardInterrupt(fn):
     def wrapper(*args):
@@ -103,6 +105,7 @@ class WebWeixin(object):
         self.ContactList = []  # 好友
         self.GroupList = []  # 群
         self.GroupMemeberList = []  # 群友
+        self.GroupMemeberDict = {}  # 群友,按照群id的字典  id->memberlist(dict)
         self.PublicUsersList = []  # 公众号／服务号
         self.SpecialUsersList = []  # 特殊账号
         self.autoReplyMode = False
@@ -469,10 +472,11 @@ class WebWeixin(object):
         self.GroupList = ContactList
 
         for i in range(len(ContactList) - 1, -1, -1):
-            Contact = ContactList[i]
-            MemberList = Contact['MemberList']
+            group = ContactList[i]
+            MemberList = group['MemberList']
             for member in MemberList:
                 self.GroupMemeberList.append(member)
+            self.GroupMemeberDict[group['UserName']] = MemberList
         return True
 
     #根据一个聊天室id，获取该聊天室的信息。返回dict
@@ -565,6 +569,7 @@ class WebWeixin(object):
 
     #发送消息
     def api_webwxsendmsg(self, word, to='filehelper'):
+        #return 1204 : 自己发给自己的错误，如果发送方是短id，那么可以成功。如果是长id，返回1204
         url = self.base_uri + \
             '/webwxsendmsg?pass_ticket=%s' % (self.pass_ticket)
         clientMsgId = str(int(time.time() * 1000)) + \
@@ -585,6 +590,7 @@ class WebWeixin(object):
         r = requests.post(url, data=data, headers=headers)
         dic = r.json()
         return dic['BaseResponse']['Ret'] == 0
+    
 
     #聊天室改名
     def api_webwxupdatechatroomModifyTopic(self,groupid, topic):
@@ -624,6 +630,7 @@ class WebWeixin(object):
     
     #创建聊天室
     def api_webwxcreatechatroom(self,uids,topic =''):  
+        #创建聊天室会出现频繁过快明天再试的情况。
         uids = [uid for uid in uids if uid != self.User['UserName']]#uids 里面不能包含自己
         url = self.base_uri + \
             '/webwxcreatechatroom?r=%s&pass_ticket=%s' % (
@@ -634,7 +641,10 @@ class WebWeixin(object):
             "MemberList": [{"UserName": uid } for uid in uids  ],
             "Topic": topic,
         }
-        dic = self._post(url, params)
+        headers = {'content-type': 'application/json; charset=UTF-8'}
+        data = json.dumps(params, ensure_ascii=False).encode('utf8')
+        r = requests.post(url, data=data, headers=headers)
+        dic = r.json() 
         groupid = ''
         if dic['BaseResponse']['Ret'] == 0 :
             groupid = dic['ChatRoomName']
@@ -751,7 +761,14 @@ class WebWeixin(object):
 
     #给用户发一张图片，把上传图片和发送图片的方法给合成了
     def api_webwxsendmsgimgBy2in1(self,fromUserName,toUserName, image_name):
-        result = self.api_webwxuploadmedia(image_name,fromUserName,toUserName)
+        filename = image_name
+        if 'http://' in image_name :
+            sufix = os.path.splitext(image_name)[1][1:]
+            md5 = hashlib.md5(image_name.encode('utf8')).hexdigest()
+            filename = './upload/%s.%s'%(md5,sufix)
+            urlretrieve(image_name, filename)  
+
+        result = self.api_webwxuploadmedia(filename,fromUserName,toUserName)
         if not result :
             return False
         else:
@@ -860,9 +877,9 @@ class WebWeixin(object):
     #根据id获取聊天室的名字
     def getGroupNameById(self, id):
         name = '未知群'
-        for member in self.GroupList:
-            if member['UserName'] == id:
-                name = member['NickName']
+        for group in self.GroupList:
+            if group['UserName'] == id:
+                name = group['NickName']
         if name == '未知群':
             # 现有群里面查不到 
             group = self.getGroupInfoById(id)
@@ -873,6 +890,7 @@ class WebWeixin(object):
                     MemberList = group['MemberList']
                     for member in MemberList:
                         self.GroupMemeberList.append(member)
+                    self.GroupMemeberDict[id] = MemberList
         return name
 
     #获取用户的昵称，如果是在群id那么获取群的名称。如果是个人用户，如果在群里面就获取displayname或者nickname。
@@ -933,18 +951,15 @@ class WebWeixin(object):
                     if g_id == g['UserName']:
                         g['MemberCount'] = m['MemberCount']
                         g['NickName'] = m['NickName']
-                        self.GroupMemeberList[g_id] = m['MemberList']
-                        in_list = True
-                        if self.msg_handler:
-                            self.msg_handler.handle_group_member_change(g_id, m['MemberList'])
+                        g['MemberList'] = m['MemberList']
+                        in_list = True 
                         break
                 if not in_list:
                     # a new group
                     self.GroupList.append(m)
-                    self.GroupMemeberList[g_id] = m['MemberList']
-                    if self.msg_handler:
-                        self.msg_handler.handle_group_list_change(m)
-                        self.msg_handler.handle_group_member_change(g_id, m['MemberList'])
+                    self.GroupMemeberDict[g_id] = m['MemberList']
+                    for member in m['MemberList'] :
+                        self.GroupMemeberList.append(member)
 
             elif m['UserName'][0] == '@':
                 # user
@@ -1040,8 +1055,8 @@ class WebWeixin(object):
             logging.debug('[*] 你有新的消息，请注意查收')
 
             if self.DEBUG:
-                filename = str(datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d%Y%H%M%S')) + str(self.msgCount) + '.json'
-                fn = self.saveFolder + '/msg' +filename
+                filename = str(datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d%Y%H%M%S')) +'-'+ str(self.msgCount) + '.json'
+                fn = self.saveFolder + '/msgbak/msg' +filename
                 with open(fn, 'w') as f:
                     f.write(json.dumps(msg))
                 print('[*] 该消息已储存到文件: ' + filename)
@@ -1199,12 +1214,17 @@ class WebWeixin(object):
             if (time.time() - self.lastCheckTs) <= 20:
                 time.sleep(time.time() - self.lastCheckTs)
 
-    
+    def clearOldMsgBak(self):
+        path = self.saveFolder + '/msgbak'
+        shutil.rmtree(path)
+        os.mkdir(path)
+        
     @catchKeyboardInterrupt
     def start(self):
         self._echo('[*] 微信网页版 ... 开动')
         print()
         logging.debug('[*] 微信网页版 ... 开动')
+        self.clearOldMsgBak()
         while True:
             self._run('[*] 正在获取 uuid ... ', self.getUUID)
             self._echo('[*] 正在获取二维码 ... 成功')
@@ -1234,7 +1254,8 @@ class WebWeixin(object):
         if self.DEBUG:
             print(self)
         logging.debug(self)
-
+        #启动定时任务
+        self.handler.handler_start_schedule(self)
         #开启进程监听消息
         if sys.platform.startswith('win'):
             import _thread
@@ -1242,7 +1263,7 @@ class WebWeixin(object):
         else:
             listenProcess = multiprocessing.Process(target=self.listenMsgMode)
             listenProcess.start()
-            
+  
 #         if self.interactive and input('[*] 是否开启自动回复模式(y/n): ') == 'y':
 #             self.autoReplyMode = True
 #             print('[*] 自动回复模式 ... 开启')
