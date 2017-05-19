@@ -24,6 +24,7 @@ from lxml import html
 from socket import timeout as timeout_error
 import hashlib,shutil
 from urllib.request import urlopen, urlretrieve 
+import qrcode_terminal
 #import pdb
 
 # for media upload
@@ -161,15 +162,17 @@ class WebWeixin(object):
 
     def _str2qr(self, str):
         print(str)
-        qr = qrcode.QRCode()
-        qr.border = 1
-        qr.add_data(str)
-        qr.make()
+        qrcode_terminal.draw(str)
+
+#         qr = qrcode.QRCode()
+#         qr.border = 1
+#         qr.add_data(str)
+#         qr.make()
         # img = qr.make_image()
         # img.save("qrcode.png")
         #mat = qr.get_matrix()
         #self._printQR(mat)  # qr.print_tty() or qr.print_ascii()
-        qr.print_ascii(invert=True)
+#         qr.print_ascii(invert=True)
 
     def _transcoding(self, data):
         if not data:
