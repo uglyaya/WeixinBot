@@ -197,18 +197,31 @@ Idfa:%s
             chatroomName = weixin.getGroupNameById(group['UserName'])
             if chatroomName in self.HAVE_NEW_USER_DICT and self.HAVE_NEW_USER_DICT[chatroomName]:
                 self.HAVE_NEW_USER_DICT[chatroomName]  = False
-                weixin.api_webwxsendmsg("[bot]"+data['VALUE']+str(int(time.time())), group['UserName']) 
+                weixin.api_webwxsendmsg(data['VALUE']+str(int(time.time())), group['UserName']) 
                 if data['IMAGE_URL'] !='':
                     weixin.api_webwxsendmsgimgBy2in1(
                     weixin.User['UserName'],
                     group['UserName'],
                     data['IMAGE_URL'] )
+                self.schedule.enter( configdata['SCHEDULE_EDU_ADD_TO_GROUP']['SCHEDULE_INTERVAL'], 0, self.sendEduAdd2Group, (weixin,group['UserName']))    
             else:
                 print("这个时间段内没有新用户，不需要教育")
         if scheduleInterval <= 0 :
             scheduleInterval =  60*60 #如果没有设置间隔。那么 就缺省定一个1个小时的间隔。
         self.schedule.enter(scheduleInterval, 0, self.sendEduMsg, (weixin,)) #重新加入队列
-                
+    
+    #在发欢迎消息一定时间后。会发一个加群的消息
+    def sendEduAdd2Group(self,weixin,chatroomUserName):   
+        print("增加了一条sendEduAdd2Group：%s"%chatroomUserName)
+        configdata = getChatroomConfig()
+        data = configdata['SCHEDULE_EDU_ADD_TO_GROUP']
+        weixin.api_webwxsendmsg(data['VALUE'] +"   时间戳" +str(int(time.time())), chatroomUserName) 
+        if data['IMAGE_URL'] !='':
+            weixin.api_webwxsendmsgimgBy2in1(
+            weixin.User['UserName'],
+            chatroomUserName,
+            data['IMAGE_URL'] ) 
+          
     #启动schedule
     def schedule_thread(self,weixin):
         # enter用来安排某事件的发生时间，从现在起第n秒开始启动 
@@ -219,7 +232,7 @@ Idfa:%s
         
     #先写一个空的job放着。这个方法可以后续修改
     def nullJob(self,weixin):
-        self.schedule.enter(60, 0, self.nullJob,(weixin,)) 
+#         self.schedule.enter(60, 0, self.nullJob,(weixin,)) 
         print("null job ")
 
     #启动定时任务
