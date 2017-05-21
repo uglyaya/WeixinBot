@@ -19,6 +19,14 @@ def getNightChatOrders():
     data= json.loads(data)
     return data
 
+#从聊天室机器人返回需要回复的内容
+def getChatbotReplyContent(roomname,content):
+    url = WX_SERVER_HOST+"/fitness/chat_bot?genreid=%s&chatroomname=%s&content=%s"%(WXGENRE_ID,urllib.parse.quote(roomname), urllib.parse.quote(content)) 
+    resp=urllib.request.urlopen(url)
+    data = resp.read().decode('utf-8')
+    data= json.loads(data) 
+    return data['REPLY']
+
 def getChatroomConfig():
     url = WX_SERVER_HOST+"/fitness/get_chatroom_config?genreid="+WXGENRE_ID 
     resp=urllib.request.urlopen(url)
@@ -54,8 +62,9 @@ class DingDongBot(BaseHandler):
     
     #处理收到的文本消息
     def handler_text_msg(self,weixin,msg):
-        chatroomName = getChatRoomNamePrefix()
         print(" ding dong bot")
+        chatroomName = getChatRoomNamePrefix() #聊天室前缀
+        groups = weixin.getGroupListByName(chatroomName) #获取该聊天室前缀的聊天室
         """
         消息发送分4种情况：
         1、我-》A  ：  from=我，to=A  ；content=内容
@@ -104,6 +113,7 @@ Idfa:%s
                  orderinfo['last_receipt']['expires_date'], 
                  )
             weixin.api_webwxsendmsg(msg, groupUserName if isGroupMsg else fromUserName)
+            
         if content == '聊天室发图' : 
             weixin.api_webwxsendmsgimgBy2in1(
                 weixin.User['UserName'],
@@ -133,11 +143,11 @@ Idfa:%s
                 weixin.api_webwxsendmsg('[bot]创建聊天室需要阿妖登录bot', groupUserName if isGroupMsg else fromUserName)
 
         if content == '聊天室数量':
-            groups = weixin.getGroupListByName(chatroomName)
+#             groups = weixin.getGroupListByName(chatroomName)
             weixin.api_webwxsendmsg(u"[bot]聊天室%s个，前缀：%s"%(len(groups),chatroomName), groupUserName if isGroupMsg else fromUserName)
 
         if content == '扫描聊天室' :
-            groups = weixin.getGroupListByName(chatroomName)
+#             groups = weixin.getGroupListByName(chatroomName)
             for group in groups: 
                 weixin.api_webwxsendmsg('[bot]我在这里[微笑]', group['UserName'])
         
@@ -148,18 +158,26 @@ Idfa:%s
                 
         if content == '聊天室加人' : 
             uid = weixin.getUserIDByName('李慰') 
-            groups = weixin.getGroupListByName(chatroomName)
+#             groups = weixin.getGroupListByName(chatroomName)
             for group in groups: 
                 weixin.api_webwxupdatechatroomAddMember(group['UserName'],[uid])
             weixin.api_webwxsendmsg('[bot]聊天室加人成功', groupUserName if isGroupMsg else fromUserName)
 
         if content == '聊天室删人' : 
             uid = weixin.getUserIDByName('李慰') 
-            groups = weixin.getGroupListByName(chatroomName)
+#             groups = weixin.getGroupListByName(chatroomName)
             for group in groups: 
                 weixin.api_webwxupdatechatroomDelMember(group['UserName'],[uid])     
             weixin.api_webwxsendmsg('[bot]聊天室删人成功', groupUserName if isGroupMsg else fromUserName)
     
+        #如果是发到观察聊天室里面的文字消息，那么需要走一边机器人看看有没有需要返回的内容。 
+        if isGroupMsg and  fromUserName != weixin.User['UserName']:
+            for group in groups: 
+                if group['UserName'] == groupUserName :
+                    reply = getChatbotReplyContent(group['NickName'],content)
+                    weixin.api_webwxsendmsg('[bot]%s'%reply, groupUserName if isGroupMsg else fromUserName)
+                    
+    #处理系统消息
     def handler_sys_msg(self,weixin,msg):
         fromUserName = msg['FromUserName']
         toUserName =msg['ToUserName']
