@@ -175,7 +175,8 @@ Idfa:%s
             for group in groups: 
                 if group['UserName'] == groupUserName :
                     reply = getChatbotReplyContent(group['NickName'],content)
-                    weixin.api_webwxsendmsg('[bot]%s'%reply, groupUserName if isGroupMsg else fromUserName)
+                    if reply != '':
+                        weixin.api_webwxsendmsg('[bot]%s'%reply, groupUserName if isGroupMsg else fromUserName)
                     
     #处理系统消息
     def handler_sys_msg(self,weixin,msg):
