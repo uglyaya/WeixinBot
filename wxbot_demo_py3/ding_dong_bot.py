@@ -20,12 +20,12 @@ def getNightChatOrders():
     return data
 
 #从聊天室机器人返回需要回复的内容
-def getChatbotReplyContent(roomname,content):
-    url = WX_SERVER_HOST+"/fitness/chat_bot?genreid=%s&chatroomname=%s&content=%s"%(WXGENRE_ID,urllib.parse.quote(roomname), urllib.parse.quote(content)) 
+def getChatbotReplyContent(roomname,content,fromname):
+    url = WX_SERVER_HOST+"/fitness/chat_bot?genreid=%s&chatroomname=%s&content=%s&fromname=%s"%(WXGENRE_ID,urllib.parse.quote(roomname), urllib.parse.quote(content), urllib.parse.quote(fromname)) 
     resp=urllib.request.urlopen(url)
     data = resp.read().decode('utf-8')
     data= json.loads(data) 
-    return data['REPLY']
+    return data['REPLY'],data['REPLY_IMAGE']
 
 def getChatroomConfig():
     url = WX_SERVER_HOST+"/fitness/get_chatroom_config?genreid="+WXGENRE_ID 
@@ -174,9 +174,14 @@ Idfa:%s
         if isGroupMsg and  fromUserName != weixin.User['UserName']:
             for group in groups: 
                 if group['UserName'] == groupUserName :
-                    reply = getChatbotReplyContent(group['NickName'],content)
+                    reply,reply_image = getChatbotReplyContent(group['NickName'],content, weixin.getUserRemarkNameById(fromUserName))
                     if reply != '':
-                        weixin.api_webwxsendmsg('[bot]%s'%reply, groupUserName if isGroupMsg else fromUserName)
+                        weixin.api_webwxsendmsg(reply, groupUserName)
+                    if reply_image !='':
+                        weixin.api_webwxsendmsgimgBy2in1(
+                        weixin.User['UserName'],
+                        groupUserName,
+                        reply_image)
                     
     #处理系统消息
     def handler_sys_msg(self,weixin,msg):
@@ -201,7 +206,8 @@ Idfa:%s
         if m:
             name = m.group(1)
             chatroomName = weixin.getGroupNameById(groupUserName)
-            weixin.api_webwxsendmsg("[bot]欢迎'%s'加入我们"%name,  groupUserName)
+#             weixin.api_webwxsendmsg("[bot]欢迎'%s'加入我们"%name,  groupUserName)
+            self.schedule.enter(5, 0, self.sendMsg2ChatroomByConfigkey, (weixin,'NEW_ADD_WELCOME_MSG', groupUserName, name ))    
             print("%s 加入了群聊: %s"%(name, groupUserName if isGroupMsg else fromUserName))
             self.HAVE_NEW_USER_DICT[chatroomName]  = True
             
@@ -216,42 +222,54 @@ Idfa:%s
             chatroomName = weixin.getGroupNameById(group['UserName'])
             if chatroomName in self.HAVE_NEW_USER_DICT and self.HAVE_NEW_USER_DICT[chatroomName]:
                 self.HAVE_NEW_USER_DICT[chatroomName]  = False
-                weixin.api_webwxsendmsg(data['VALUE']+str(int(time.time())), group['UserName']) 
+                content = data['VALUE'] 
+                if content !='':
+                    weixin.api_webwxsendmsg(content, group['UserName'])  
+                content2 = data['VALUE2'] 
+                if content2!='':
+                    weixin.api_webwxsendmsg(content2, group['UserName'])   
                 if data['IMAGE_URL'] !='':
                     weixin.api_webwxsendmsgimgBy2in1(
                     weixin.User['UserName'],
                     group['UserName'],
                     data['IMAGE_URL'] )
-                self.schedule.enter( configdata['SCHEDULE_EDU_ADD_TO_GROUP']['SCHEDULE_INTERVAL'], 0, self.sendEduAdd2Group, (weixin,group['UserName']))    
+                self.schedule.enter( configdata['SCHEDULE_EDU_ADD_TO_GROUP']['SCHEDULE_INTERVAL'], 0, self.sendMsg2ChatroomByConfigkey, (weixin,'SCHEDULE_EDU_ADD_TO_GROUP',group['UserName'],''))    
             else:
                 print("这个时间段内没有新用户，不需要教育")
         if scheduleInterval <= 0 :
             scheduleInterval =  60*60 #如果没有设置间隔。那么 就缺省定一个1个小时的间隔。
         self.schedule.enter(scheduleInterval, 0, self.sendEduMsg, (weixin,)) #重新加入队列
     
-    #在发欢迎消息一定时间后。会发一个加群的消息
-    def sendEduAdd2Group(self,weixin,chatroomUserName):   
-        print("增加了一条sendEduAdd2Group：%s"%chatroomUserName)
+    #根据配置的key发一条指定key的msg给一个指定的聊天室
+    def sendMsg2ChatroomByConfigkey(self ,  weixin , configkey , toUserName,fromName):   
+        print("增加了一条 sendMsg2ChatroomByConfigkey：%s"%configkey)
         configdata = getChatroomConfig()
-        data = configdata['SCHEDULE_EDU_ADD_TO_GROUP']
-        weixin.api_webwxsendmsg(data['VALUE'] +"   时间戳" +str(int(time.time())), chatroomUserName) 
+        data = configdata[configkey]
+        content = data['VALUE']
+        if content !='' : 
+            content = content.replace('$USERNAME$',fromName)
+            weixin.api_webwxsendmsg( content , toUserName)
+        content2 = data['VALUE2']
+        if content2 !='' : 
+            content2= content2.replace('$USERNAME$',fromName)
+            weixin.api_webwxsendmsg( content2 , toUserName)
         if data['IMAGE_URL'] !='':
             weixin.api_webwxsendmsgimgBy2in1(
             weixin.User['UserName'],
-            chatroomUserName,
+            toUserName,
             data['IMAGE_URL'] ) 
           
     #启动schedule
     def schedule_thread(self,weixin):
         # enter用来安排某事件的发生时间，从现在起第n秒开始启动 
-        self.schedule.enter(60, 0, self.sendEduMsg, (weixin,)) 
-        self.schedule.enter(60, 0, self.nullJob, (weixin,)) 
+        self.schedule.enter(5, 1, self.sendEduMsg, (weixin,)) 
+        self.schedule.enter(5, 1, self.nullJob, (weixin,)) 
         # 持续运行，直到计划时间队列变成空为止 
         self.schedule.run() 
         
     #先写一个空的job放着。这个方法可以后续修改
     def nullJob(self,weixin):
-#         self.schedule.enter(60, 0, self.nullJob,(weixin,)) 
+        self.schedule.enter(60, 10, self.nullJob,(weixin,)) 
         print("null job ")
 
     #启动定时任务
